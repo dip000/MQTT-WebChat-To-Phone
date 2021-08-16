@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+
+
+	<!-- This doccument must be the same as "MQTT_clientFrontPWG_vx.html" but this
+		 is for local tests only. update both.
+		 Aditionaly, this doesn´t updates to gitHub unless for examples
+		 NOTE. This doc uses tables for containers, in PWG.es uses it´s own system,
+				just don´t copy the tables from here
+		 -->
+
+<html><meta charset="UTF-8">
+    <head>
+	    <title>template</title>
+		<script  type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+		<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+	
+	
+	
+	<!-- Update to gitHub when is finished -->
+	<style>
+		#webConsole{
+			display:block;
+			position: relative;
+			height:auto;
+			margin:auto;
+			width:200px;
+		}
+
+			#webConsoleTitle span{
+				font-size:10px;
+			}
+			#webConsoleTitle i{
+				font-size:15px;
+			}
+
+		#webConsoleContent{
+			background-color: rgba(30,30,30,0.8);
+			box-shadow: 0 0 10px 0 rgba(0,200,20,0.2);
+			border-radius: 5px;
+			padding:3px;
+			width:200px;
+		}
+		
+		#webConsoleControl{
+			**display:none;
+		}
+		
+		#consoleOutput{
+			color: white;
+			font-size:15px;
+			margin:3px;
+			width:170px;
+			opacity:0;
+		}
+			#consoleOutput i{
+				font-size:15px;
+			}
+		
+		#actionImg{
+			cursor:pointer;
+			user-select:none;
+			color:white;
+			font-size:100px;
+		}
+		#webConsoleAutentification{
+			**display:none;
+		}
+			#webConsoleAutentification input{
+				padding: 5px;
+				width:190px;
+			}
+		
+			#webConsoleProjectList div{
+				color:#1f1f1f;
+				margin:3px;
+				padding:8px;
+				background-color: white;
+				cursor:pointer;
+				border-radius:5px;
+			}
+			#webConsoleProjectList div:hover{
+				background-color: rgba(10,180,25,1);
+				color: #e0e0e0;
+			}
+			.webConsole-Title{
+				font-size:17px;
+				color: #f0f0f0;
+				text-align: center;
+				display:block;
+				width:190px;
+				margin-bottom: 20px;
+			}
+		
+		
+		
+		#webConsoleMessageBox{
+			height: 200px;
+			overflow-y:auto;
+		}
+			#webConsoleMessageBox div{
+				padding:3px; margin:5px;
+				background: white;
+				font-size:14px;
+				width:80%;
+				margin-right:15%;
+				border-radius:5px;
+			}
+			#webConsoleMessageBox span{
+				color:firebrick;
+				display:block;
+			}
+			
+			#webConsoleMessageInput{
+				margin:auto;
+				width:190px;
+			}
+			#webConsoleMessageInput i{
+				color: white;
+				display:inline-block;
+				cursor:pointer;
+				margin-left:4px;
+			}
+			#webConsoleMessageInput input{
+				border-radius:20px;
+				width: 150px;
+				padding: 4px;
+			}
+			#webConsoleMessageInput i:hover{
+				color: #e0e0e0;
+			}
+			
+			#webConsoleMessageButtons{
+				
+			}
+			#webConsoleMessageButtons span{
+				margin:5px;
+				color: white;
+				cursor:pointer;
+				float:left;
+			}
+		
+	</style>
+
+	</head>
+
+	<body style="background-color:#F5F5F5">
+	
+	<br><br><br><br><br><br>
+					<div id="webConsole">
+						<div id="webConsoleContent" >
+						
+							<div id="webConsoleControl">
+								<div id="webConsoleMessageBox"> </div> <div id="webConsoleMessageInput"><input type="text"></input><i onclick="MessagerSend();" class="material-icons">send</i></div>
+							</div>
+							
+							<center><div id="consoleOutput">&nbsp; <i class="material-icons">error_outline</i>&nbsp;</div></center>
+						</div>
+					</div>
+	<br><br><br><br><br><br>
+	
+	<script>
+			var user = "yziinyrs";
+			var password = "cgAduprcUNln";
+			var topic = "webChat";
+			var nickname = "Jammer";
+
+			var host = "tailor.cloudmqtt.com";
+			var port = 31345;
+			
+			var formatedInput;
+			var responseTimeout = 60000;
+			
+			var subscribeTopic;
+			var publishTopic;
+			
+			const messageFromCodes = {"100":"--Thread Closed--","200":"--Thread Finished--", "1":"Si", "0":"No","2":"No lo se","10":"ok","420":"Connect first with $con:~ ", "590":"send/get not found","690":"Incorrect syntax for save command"};
+
+			window.onload = function() {
+				nickname = nickname + Math.floor(Math.random() * 100);
+				subscribeTopic = topic + "/response/" + nickname;
+				publishTopic = topic + "/request";
+			}
+			
+			function showMessage(msg, incoming=true){
+				let receivedMessage = '<div><span>'+ subscribeTopic +'</span>'+ msg +'</div>';
+				let	sentMessage = '<div style="background:#c0ffc0; margin-left:15%;"><span>'+ publishTopic + "/" + nickname +'</span>'+ msg +'</div>';
+
+				$("#webConsoleMessageBox").append(incoming===true?receivedMessage:sentMessage);
+				$("#webConsoleMessageBox").scrollTop($("#webConsoleMessageBox")[0].scrollHeight);
+			}
+			
+			function MessagerSend(){
+				let input = $("#webConsoleMessageInput input").val();
+				formatedInput = input + " -" + nickname;
+				
+				if(input && (connectionState === true) ){
+					MQTTsend(formatedInput, publishTopic);
+					showMessage(input, false);
+					
+					clearTimeout(disconnectTimeout);
+					waitResponse();
+				}
+				else{
+					if(input){
+						MQTTmake();
+						showMessage(input, false);
+					}
+					else{
+						sendConsoleMessage("No message to send");
+					}
+				}
+			}
+
+
+	/*This script is the one uploaded to gitHub "MQTTSSL.js". Update when finished*/
+			var connectionState=false;
+			var readyToResend = true;
+			
+
+			var receivedMessage;
+			
+		
+			function MQTTmake() {
+				try{
+					client = new Paho.MQTT.Client(host, port, subscribeTopic);
+					client.onMessageArrived = onMessageArrived;
+					client.onConnectionLost = onConnectionLost;
+					
+					var options = {
+						"onSuccess":onConnect,
+						"onFailure":onConnectionFail
+					};
+					
+					if(user){
+						options.useSSL = true;
+						options.userName = user;
+						options.password = password;
+					}
+					
+					client.connect(options);
+					
+				} catch(e){
+					sendConsoleMessage("Closed thread");
+				}
+			}
+			
+			function MQTTsend(msg, destination) {
+				if(connectionState == true){
+					message = new Paho.MQTT.Message(msg);
+					message.destinationName = destination;
+					client.send(message);
+					console.log("Sent: " + msg + ". To: " + destination);
+				}
+				else{
+					console.log("Couldn´t send. Internal time out or incorrect clienting");
+				}
+           	}
+			
+			function onConnect() {
+					connectionState = true;
+					client.subscribe(subscribeTopic);
+					console.log("Subscribed!");
+					console.log("Sending key..");
+					sendConsoleMessage("Dev might not respond inmediately");
+
+					MQTTsend(formatedInput, publishTopic);
+					waitResponse();
+			}
+			
+			function waitResponse(){
+			
+			disconnectTimeout = setTimeout(
+				function(){
+					if(receivedMessage){
+						//showMessage(receivedMessage);
+						client.disconnect();
+					}
+					else{
+						sendConsoleMessage("Dev is not online right now. Try again later :c");
+						client.disconnect();
+					}
+					receivedMessage = "";
+				}, responseTimeout);
+				
+			}
+					
+			function onConnectionLost(e) {
+				connectionState = false;
+				console.log("Connection finished. " + e.errorMessage);
+				
+
+				//$("#webConsoleAutentification").show();
+				//$("#webConsoleControl").hide();
+			}
+			
+			function onConnectionFail(e) {
+				sendConsoleMessage("Dev message threads are full right now (4/4). Try again later");
+			}
+			
+			function onMessageArrived(message) {
+				receivedMessage = message.payloadString;
+				console.log("Received Message: " + receivedMessage);
+					
+				if(receivedMessage in messageFromCodes){
+					showMessage(messageFromCodes[receivedMessage]);
+					
+					switch (parseInt(receivedMessage)){
+						case 100:
+							client.disconnect();
+							clearTimeout(disconnectTimeout);
+						break;
+						case 200:
+							client.disconnect();
+							clearTimeout(disconnectTimeout);
+							host = "";	//On code 200, ruins the next connections
+						break;
+					}
+				}
+				else{
+					showMessage(receivedMessage);
+				}
+				
+				clearTimeout(disconnectTimeout);
+				waitResponse();
+			}
+			
+			function sendConsoleMessage(message){
+				var consoleMessageInit = '<i class="material-icons">error_outline</i>&nbsp;';
+					
+				$("#consoleOutput").css("opacity","1");
+				$("#consoleOutput").html(consoleMessageInit + message);
+				setTimeout(function(){$("#consoleOutput").animate({opacity: "0"})},10000);
+
+			}
+			
+	</script>
+	
+	</body>
+</html>

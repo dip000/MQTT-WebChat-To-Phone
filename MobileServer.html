@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html><meta charset="UTF-8">
+    <head>
+	<style>
+	.highlight {
+		background-color: Chartreuse;
+	}
+	</style>
+		<script src="mqttws3.wCookies.js"></script>
+
+		<script>
+			/*	MobileServer.js
+			*
+			*
+			*/
+			var host = "tailor.cloudmqtt.com";
+			var port = 31345;
+			
+			var user = "yziinyrs";
+			var password = "cgAduprcUNln";
+			var topic = "webChat";
+			var nickname = "Jammer";
+
+	
+			var connected = false;
+			
+			var server;
+			var subscribeTopic;
+			var publishTopic;
+
+			var appMsg;
+			var settings;
+			var dedicatedAppMode;
+			
+			var threads = {};
+			var responseTimeout = 60000;
+			var readingInputTime = 500;
+			var readingInputTimer;
+			
+			window.onload = function() {
+				setTimeout(function(){
+					try {
+						dedicatedAppMode = true;
+						
+						appMsg = window.AppInventor.getWebViewString();
+						settings = JSON.parse(appMsg);
+						window.AppInventor.setWebViewString = "";
+						
+						host = settings[0];
+						port = parseInt(settings[1]);
+						user = settings[2];
+						password = settings[3];
+						topic = settings[4];
+						nickname = settings[5];
+						
+						sendConsoleMessage("Using App. Settings: ");
+						sendConsoleMessage(appMsg);
+						readInput();
+					
+					}catch(e){
+						dedicatedAppMode = false;
+						sendConsoleMessage("Using Internet Browser. Reason:" + e);
+					}
+				
+					subscribeTopic = topic + "/request";
+					publishTopic = topic + "/response/";
+						
+					MQTTmake();
+				}, 4000);
+			}
+			
+			function readInput(){
+				
+					readInputTimer = setInterval(function(){
+						try{
+							appMsg = window.AppInventor.getWebViewString();
+							eval(appMsg);
+							window.AppInventor.setWebViewString("");
+						}catch(e){
+							sendConsoleMessage("App command evaluation failed" + e);
+							stopInput();
+							readingInputTime = 10000;
+							readInput();
+						}
+						appMsg = "";
+					},readingInputTime);
+				
+			}
+			
+			function stopInput(){
+				clearInterval(readInputTimer);
+			}
+			
+			function onMessageArrived(msg){
+				let message = msg.payloadString;
+				
+				console.log("Input Message: " + message);
+				console.log(threads);
+
+				let input = inputBreakdown(message);
+				let destination = publishTopic + input.name;
+				
+				sendConsoleMessageHighlight("Received: " + input.msg + " From: " + input.name);
+				
+				
+				if(threads[input.name] == null){
+					threads[input.name] = {};
+				}
+				else{
+					clearTimeout(threads[input.name].threadTimeout);
+				}
+				
+				threads[input.name].threadTimeout = setTimeout(function(){
+					sendConsoleMessage("Thread " + input.name + " Expired. Deleted");
+					delete threads[input.name];
+				}, responseTimeout);
+				
+				//MQTTsend("0", destination);
+			}
+			
+			function closeThread(thread, persistent=false){
+				let destination;
+				let name;
+				
+				try{
+				
+				if(typeof thread === "string"){
+					destination = publishTopic + thread;
+					name = thread;
+				}
+				else if(typeof thread === "number"){
+					destination = publishTopic + nickname + thread;	
+					name = nickname + thread;
+				}
+				
+				clearTimeout(threads[name].threadTimeout);
+				
+				delete threads[name];
+				MQTTsend(persistent?"200":"100", destination);
+
+				sendConsoleMessage("Thread " + name + " Deleted");
+				
+				}catch(e){
+					sendConsoleMessage("Thread doesn't exist anymore");
+				}
+			}
+			
+			function send(message, thread){
+				let destination;
+				let name;
+				
+				try{
+				
+				if(typeof thread === "string"){
+					destination = publishTopic + thread;
+					name = thread;
+				}
+				else if(typeof thread === "number"){
+					destination = publishTopic + nickname + thread;	
+					name = nickname + thread;
+				}
+				
+				MQTTsend(message,destination);
+				clearTimeout(threads[name].threadTimeout);
+				
+				threads[name].threadTimeout = setTimeout(function(){
+				delete threads[name];
+				sendConsoleMessage("Thread " + name + " Expired. Deleted");
+				
+				}, responseTimeout);
+				
+				}catch(e){
+					sendConsoleMessage("Thread doesn't exist anymore");
+				}
+
+			}
+			
+			show = function showThreads(){
+				sendConsoleMessage("Active Threads:");
+				sendConsoleMessage("&nbsp;" + JSON.stringify(threads));
+			}
+
+			
+			function inputBreakdown(usrInput){
+				let posUser = usrInput.lastIndexOf("-");
+				let input = {
+						"msg":null,
+						"name":null
+					};
+					
+				input.name = usrInput.substring(posUser+1);
+				input.msg = usrInput.substring(0, posUser-1);
+				
+				return input;
+			}
+			
+			function sendConsoleMessage(messageToPrint){
+				document.getElementById('consoleOutput').innerHTML = document.getElementById('consoleOutput').innerHTML + '<div>' + messageToPrint + '</div>';
+				document.documentElement.scrollTop = document.documentElement.scrollHeight;
+			}
+			function sendConsoleMessageHighlight(messageToPrint){
+				document.getElementById('consoleOutput').innerHTML = document.getElementById('consoleOutput').innerHTML + '<div class="highlight">' + messageToPrint + '</div>';
+				document.documentElement.scrollTop = document.documentElement.scrollHeight;
+			}
+			
+
+		</script>
+		
+		
+		<script>	/* This Script implements the Paho MQTT base connections. Doesn´t need structure modifications */
+
+						
+			function MQTTmake() {
+				try{
+					server = new Paho.MQTT.Client(host, port, subscribeTopic);
+					server.onMessageArrived = onMessageArrived;
+					server.onConnectionLost = onConnectionLost;
+					
+					var options = {
+						"onSuccess":onConnect,
+						"onFailure":onConnectionLost
+					};
+					
+					if(user){
+						options.useSSL = true;
+						options.userName = user;
+						options.password = password;
+					}
+					
+					server.connect(options);
+					
+				} catch(e){
+					sendConsoleMessage("MQTTmake failed. Bad or expired host/port/topic. "+e);
+				}
+			}
+			
+			function MQTTsend(msg, destination) {
+				if(connected == true){
+					message = new Paho.MQTT.Message(msg);
+					message.destinationName = destination;
+					server.send(message);
+					
+					sendConsoleMessage("Sent: " + msg + " to " + destination);
+				}
+				else{
+					sendConsoleMessage("MQTTsend responses failed due false connection state. Internal time out or incorrect clienting");
+				}
+           	}			
+			
+			function onConnect() {
+					connected = true;
+					server.subscribe(subscribeTopic);
+					sendConsoleMessage("Requests Server Initialized");
+					sendConsoleMessage("&nbsp;&nbsp; subscribed to: "+subscribeTopic);
+					sendConsoleMessage("&nbsp;&nbsp; publish to: "+publishTopic + "[user requesting]");
+					//window.AppInventor.setWebViewString("Connected!");
+			}
+			
+			function onConnectionLost(e) {
+				connected = false;
+				sendConsoleMessage("Requests server is Down. Restarting..");
+				console.log("Connection finished. " + e.errorMessage);
+
+				//buildSettings();
+			}
+			
+		</script>
+	</head>
+	<body>
+		<div id="consoleOutput"></div>
+	</body>
+</html>
